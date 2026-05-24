@@ -502,6 +502,8 @@ class Transformer(nn.Module):
 
         # Auto-load config and weights from checkpoint when vocab sizes not given
         _state_dict = None
+        _src_vocab  = None
+        _tgt_vocab  = None
         if src_vocab_size is None or tgt_vocab_size is None:
             for ckpt_path in ['checkpoint_best.pt', 'checkpoint_last.pt', 'checkpoint.pt']:
                 if os.path.exists(ckpt_path):
@@ -516,9 +518,13 @@ class Transformer(nn.Module):
                     dropout   = cfg.get('dropout',   dropout)
                     pad_idx   = cfg.get('pad_idx',   pad_idx)
                     _state_dict = ckpt.get('model_state_dict')
+                    _src_vocab  = ckpt.get('src_vocab')
+                    _tgt_vocab  = ckpt.get('tgt_vocab')
                     break
 
-        self.pad_idx = pad_idx
+        self.pad_idx  = pad_idx
+        self.src_vocab = _src_vocab
+        self.tgt_vocab = _tgt_vocab
 
         # Embeddings
         self.src_embedding = nn.Embedding(src_vocab_size, d_model, padding_idx=pad_idx)
@@ -626,28 +632,44 @@ class Transformer(nn.Module):
 
     def infer(
         self,
-        src: torch.Tensor,
+        src,
         max_len: int = 100,
         start_symbol: int = 2,
         end_symbol: int = 3,
         device: str = None,
-    ) -> torch.Tensor:
+    ):
         """
         Greedy-decode a source sequence to a target sequence.
 
         Args:
-            src          : Token indices, shape [1, src_len] or [src_len].
+            src          : Either a raw German string, or token indices as a
+                           tensor of shape [1, src_len] or [src_len].
             max_len      : Maximum number of tokens to generate.
             start_symbol : Vocabulary index of <sos> (default 2).
             end_symbol   : Vocabulary index of <eos> (default 3).
             device       : Device string; inferred from model parameters if None.
 
         Returns:
-            ys : Generated token indices, shape [1, out_len].
+            If src is a string  → translated English string.
+            If src is a tensor  → generated token indices, shape [1, out_len].
         """
         if device is None:
             device = next(self.parameters()).device
         self.eval()
+
+        return_string = isinstance(src, str)
+
+        if return_string:
+            if self.src_vocab is None:
+                raise RuntimeError("Model has no src_vocab — cannot tokenize string input.")
+            try:
+                import spacy
+                de_nlp = spacy.load("de_core_news_sm")
+                tokens = [tok.text.lower() for tok in de_nlp.tokenizer(src)]
+            except Exception:
+                tokens = src.lower().split()
+            ids = self.src_vocab.encode(tokens)
+            src = torch.tensor([ids], dtype=torch.long)
 
         if src.dim() == 1:
             src = src.unsqueeze(0)
@@ -668,5 +690,10 @@ class Transformer(nn.Module):
             ys = torch.cat([ys, next_token], dim=1)
             if next_token.item() == end_symbol:
                 break
+
+        if return_string:
+            if self.tgt_vocab is None:
+                raise RuntimeError("Model has no tgt_vocab — cannot decode output indices.")
+            return self.tgt_vocab.decode(ys[0].tolist())
 
         return ys

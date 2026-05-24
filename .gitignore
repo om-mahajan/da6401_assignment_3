@@ -1,3 +1,5 @@
 checkpoint_best.pt
 checkpoint_last.pt
 wandb/
+checkpoint.pt
+__pycache__

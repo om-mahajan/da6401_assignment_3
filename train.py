@@ -341,13 +341,15 @@ def save_checkpoint(
     scheduler,
     epoch: int,
     path: str = "checkpoint.pt",
+    src_vocab=None,
+    tgt_vocab=None,
 ) -> None:
     """
     Save model + optimizer + scheduler state to disk.
 
     Saves a dict with keys:
         'epoch', 'model_state_dict', 'optimizer_state_dict',
-        'scheduler_state_dict', 'model_config'
+        'scheduler_state_dict', 'model_config', 'src_vocab', 'tgt_vocab'
     """
     torch.save(
         {
@@ -357,6 +359,8 @@ def save_checkpoint(
             "scheduler_state_dict": scheduler.state_dict() if scheduler is not None else None,
             # model.config is stored in Transformer.__init__
             "model_config":        model.config,
+            "src_vocab":           src_vocab if src_vocab is not None else getattr(model, 'src_vocab', None),
+            "tgt_vocab":           tgt_vocab if tgt_vocab is not None else getattr(model, 'tgt_vocab', None),
         },
         path,
     )
@@ -490,10 +494,10 @@ def run_training_experiment() -> None:
         })
 
         # Save every epoch; keep best separately
-        save_checkpoint(model, optimizer, scheduler, epoch + 1, "checkpoint_last.pt")
+        save_checkpoint(model, optimizer, scheduler, epoch + 1, "checkpoint_last.pt", src_vocab, tgt_vocab)
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            save_checkpoint(model, optimizer, scheduler, epoch + 1, "checkpoint_best.pt")
+            save_checkpoint(model, optimizer, scheduler, epoch + 1, "checkpoint_best.pt", src_vocab, tgt_vocab)
             print(f"  ★ New best val loss: {best_val_loss:.4f}")
 
     # ── BLEU on test set ─────────────────────────────────────────────
